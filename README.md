@@ -1,1 +1,1 @@
-# SemEval2022_Task-2_YNU-HPCC
+# SemEval2022_Task2_YNU-HPCC
