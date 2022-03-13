@@ -30,7 +30,7 @@ import random
 import torch
 import argparse
 
-
+#本部分来自https://github.com/shawroad/CoSENT_Pytorch
 def calc_loss(y_true,y_pred):
     #取出真实标签
     y_true=y_true[::2]
