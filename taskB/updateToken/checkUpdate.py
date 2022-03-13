@@ -1,19 +1,9 @@
 from transformers import AutoTokenizer
-# from simcse import SimCSE
 from sentence_transformers import SentenceTransformer
 
-# model_locationEN = '../modelSave/roberta-base'
-# model_locationEN = '../modelSave/unsup-simcse-roberta-large'
-# model_locationPT= '../modelSave/bert-base-portuguese-cased'
-# model_locationEN='../modelSave/EN/distiluse-base-multilingual-cased-v1'
-# model_locationPT='../modelSave/PT/distiluse-base-multilingual-cased-v1'
 model_location='../model/model_with_MWE/distiluse-base-multilingual-cased-v1'
 # model_location='../model/SentenceTransformer/distiluse-base-multilingual-cased-v1'
 
-# modelEN = SentenceTransformer(model_locationEN)
-# modelPT = SentenceTransformer(model_locationPT)
-# model = SentenceTransformer(model_location)
-# modelEN_simCSE=SimCSE(model_locationEN)
 
 # tokenizerEN = AutoTokenizer.from_pretrained(
 #     model_locationEN ,
@@ -39,7 +29,6 @@ tokenizer = AutoTokenizer.from_pretrained(
     add_special_tokens = False,
     do_lower_case=False
 )
-
 
 #test tokenizer
 some_pass = False
