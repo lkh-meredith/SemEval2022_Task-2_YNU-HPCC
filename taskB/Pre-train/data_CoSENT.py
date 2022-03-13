@@ -74,7 +74,7 @@ def load_PTdata(path):
 
     return train_label, train_samples, dev_label, dev_samples, test_label, test_samples
 
-
+#以下部分来自https://github.com/shawroad/CoSENT_Pytorch
 class CustomDataset(Dataset):
     def __init__(self, sentence, label, tokenizer):
         self.sentence = sentence
