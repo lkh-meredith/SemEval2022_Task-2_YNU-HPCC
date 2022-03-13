@@ -50,8 +50,6 @@ def prepare_data(location,type) :
                     sentence1s.append(sentence1)
                     # index_id[data['ID'][index]] = index#id->index
 
-            
-
             return sentence1s,MWEs,labels
 
         elif type=='eval' or 'test':
