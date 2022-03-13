@@ -61,7 +61,6 @@ class Loss1(nn.Module):
             num_vectors_concatenated += 1
         # if concatenation_sent_multiplication:
         #     num_vectors_concatenated += 1
-        # logger.info("Softmax loss: #Vectors concatenated: {}".format(num_vectors_concatenated))
         self.dropout = nn.Dropout(p=0.1)
         # self.batch_normalization = nn.BatchNorm1d(num_features=num_vectors_concatenated * sentence_embedding_dimension)
         self.classifier = nn.Linear(in_features=num_vectors_concatenated * sentence_embedding_dimension,
@@ -132,13 +131,6 @@ with gzip.open(sts_dataset_path, 'rt', encoding='utf8') as fIn:
                 label=0
             inp_example=InputExample(texts=[row['sentence1'], row['sentence2']],label=label)
             train_samples.append(inp_example)
-            # if float(row['score'])>=4.0:
-            #     inp_example1 = InputExample(texts=[row['sentence1'], row['sentence2']])
-            #     train_samples1.append(inp_example1)
-            # else:
-            #     score = float(row['score']) / 5.0  # Normalize score to range 0 ... 1
-            #     inp_example2=InputExample(texts=[row['sentence1'], row['sentence2']],label=score)
-            #     train_samples2.append(inp_example2)
 
 
 for split in [ 'train', 'validation', 'test' ] :
