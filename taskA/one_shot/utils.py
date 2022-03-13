@@ -50,12 +50,7 @@ def prepare_data(location,type) :
                     sentence1s.append(sentence1)
                     # index_id[data['ID'][index]] = index#id->index
 
-                    # if mwe != 'None' :
-                    #     # replaced = sentence1.replace( mwe, tokenise_idiom (mwe))#,flags=re.I
-                    #     replaced=re.sub(mwe, tokenise_idiom (mwe), sentence1, flags=re.IGNORECASE)
-                    #     assert replaced != sentence1
-                    #     sentence1 = replaced
-                    # replaced_sentence1.append( sentence1 )
+            
 
             return sentence1s,MWEs,labels
 
