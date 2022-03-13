@@ -4,23 +4,6 @@ from sentence_transformers import SentenceTransformer
 model_location='../model/model_with_MWE/distiluse-base-multilingual-cased-v1'
 # model_location='../model/SentenceTransformer/distiluse-base-multilingual-cased-v1'
 
-
-# tokenizerEN = AutoTokenizer.from_pretrained(
-#     model_locationEN ,
-#     use_fast = False ,
-#     max_length = 510 ,
-#     force_download = True,
-#     add_special_tokens = False
-# )
-
-# tokenizerPT = AutoTokenizer.from_pretrained(
-#     model_locationPT ,
-#     use_fast = False ,
-#     max_length = 510 ,
-#     force_download = True,
-#     add_special_tokens=False
-# )
-#
 tokenizer = AutoTokenizer.from_pretrained(
     model_location ,
     use_fast = False ,
