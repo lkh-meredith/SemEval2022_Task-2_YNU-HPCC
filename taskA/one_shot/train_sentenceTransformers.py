@@ -50,16 +50,9 @@ def collate_fn(batch):
         dic={'input_ids':torch.tensor(inputs).cuda(),'attention_mask': torch.tensor(attentions).cuda(),'token_type_ids': torch.tensor(tokens).cuda()}
         sentence_feature.append(dic)
 
-    # all_input_ids = torch.tensor(input_ids, dtype=torch.long)
-    # all_input_mask = torch.tensor(attention_mask, dtype=torch.long)
-    # all_segment_ids = torch.tensor(token_type_ids, dtype=torch.long)
+ 
 
     return sentence_feature
-    # return {
-    #         'input_ids': input_ids,
-    #         'attention_mask': attention_mask,
-    #         'token_type_ids': token_type_ids
-    #     }
 
 class Loss(nn.Module):
     """
