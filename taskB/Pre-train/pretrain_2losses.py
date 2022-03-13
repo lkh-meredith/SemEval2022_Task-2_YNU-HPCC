@@ -22,8 +22,6 @@ import argparse
 
 sts_dataset_path = os.path.join('.', 'sts', 'stsbenchmark.tsv.gz')
 assin2_dataset_path=os.path.join('.','assin2')
-# if not os.path.exists(sts_dataset_path):
-#     util.http_get('https://sbert.net/datasets/stsbenchmark.tsv.gz', sts_dataset_path)
 
 
 class Loss1(nn.Module):
@@ -133,13 +131,6 @@ with gzip.open(sts_dataset_path, 'rt', encoding='utf8') as fIn:
                 label=0
             inp_example=InputExample(texts=[row['sentence1'], row['sentence2']],label=label)
             train_samples.append(inp_example)
-            # if float(row['score'])>=4.0:
-            #     inp_example1 = InputExample(texts=[row['sentence1'], row['sentence2']])
-            #     train_samples1.append(inp_example1)
-            # else:
-            #     score = float(row['score']) / 5.0  # Normalize score to range 0 ... 1
-            #     inp_example2=InputExample(texts=[row['sentence1'], row['sentence2']],label=score)
-            #     train_samples2.append(inp_example2)
 
 
 for split in [ 'train', 'validation', 'test' ] :
@@ -223,9 +214,6 @@ if __name__=="__main__":
     model.save(sentencemodel_save_path)
 
     train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=train_batch_size)
-    # train_dataloader2 = DataLoader(train_samples2, shuffle=True, batch_size=train_batch_size)
-    # train_loss1 = losses.MultipleNegativesRankingLoss(model,scale=1)
-    # train_loss2 = losses.CosineSimilarityLoss(model=model)
     train_loss = Loss1(model=model,sentence_embedding_dimension=model.get_sentence_embedding_dimension(),num_labels=2)
 
     evaluator = EmbeddingSimilarityEvaluator.from_input_examples(dev_samples)
