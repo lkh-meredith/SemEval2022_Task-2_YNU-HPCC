@@ -1,286 +1,366 @@
+import re
 import os
+import sys
+import pandas as pd
+import numpy as np
+import random
+import torch
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import paired_cosine_distances
 import csv
-from pathlib import Path
+from scipy.stats import pearsonr, spearmanr
 
-def load_csv( path, delimiter=',' ) :
-  header = None
-  data   = list()
-  with open( path, encoding='utf-8') as csvfile:
-    reader = csv.reader( csvfile, delimiter=delimiter )
-    for row in reader :
-      if header is None :
-        header = row
-        continue
-      data.append( row )
-  return header, data
-
-def write_csv( data, location ) :
-  with open( location, 'w', encoding='utf-8',newline='') as csvfile:
-    writer = csv.writer( csvfile )
-    writer.writerows( data )
-  print( "Wrote {}".format( location ) )
-  return
-
-def insert_to_submission_file( submission_format_file, input_file, prediction_format_file, setting ) :
-    submission_header, submission_content = load_csv( submission_format_file )
-    input_header     , input_data         = load_csv( input_file             )
-    prediction_header, prediction_data    = load_csv( prediction_format_file, '\t' )
-
-    assert len( input_data ) == len( prediction_data )
-
-    ## submission_header ['ID', 'Language', 'Setting', 'Label']
-    ## input_header      ['label', 'sentence1' ]
-    ## prediction_header ['index', 'prediction']
-
-    prediction_data = list( reversed( prediction_data ) )
-
-    started_insert  = False
-    for elem in submission_content :
-        if elem[ submission_header.index( 'Setting' ) ] != setting :
-            if started_insert :
-                if len( prediction_data ) == 0 :
-                    break
-                else :
-                    raise Exception( "Update should to contiguous ... something wrong." )
-            continue
-        started_insert = True
-        elem[ submission_header.index( 'Label' ) ] = prediction_data.pop()[ prediction_header.index( 'prediction' ) ]
-
-    return [ submission_header ] + submission_content
+#create baseline of create train data
+def get_alter_sentence(data_location) :
+    df=pd.read_csv(data_location,encoding='ISO-8859-1')
+    alter1 = list()
+    alter2 = list()
+    for i in range(len(df)):
+        if df['sim'][i] == 'None':
+            alter1.append(df['alternative_1'][i])
+            alter2.append(df['alternative_2'][i])
+    return alter1, alter2
 
 
-def _get_train_data(data_location, file_name, include_context, include_idiom):
-    file_name = os.path.join(data_location, file_name)
-
-    header, data = load_csv(file_name)
-
-    out_header = ['label', 'sentence1']
-    if include_idiom:
-        out_header = ['label', 'sentence1', 'sentence2']
-
-    # ['DataID', 'Language', 'MWE', 'Setting', 'Previous', 'Target', 'Next', 'Label']
-    out_data = list()
-    for elem in data:
-        label = elem[header.index('Label')]
-        sentence1 = elem[header.index('Target')]
-        if include_context:
-            sentence1 = ' '.join(
-                [elem[header.index('Previous')], elem[header.index('Target')], elem[header.index('Next')]])
-        this_row = None
-        if not include_idiom:
-            this_row = [label, sentence1]
+def out_train_file(data_location,similarity):
+    df=pd.read_csv(data_location,encoding='ISO-8859-1')
+    k=0
+    sentence1,sentence2=list(),list()
+    MWE=list()
+    alter_sim=list()
+    for i in range(len(df)):
+        sentence1.append(df['sentence_1'][i])
+        sentence2.append(df['sentence_2'][i])
+        MWE.append(df['MWE1'][i])
+        if(df['sim'][i]=='None'):
+            alter_sim.append(similarity[k])
+            k+=1
         else:
-            sentence2 = elem[header.index('MWE')]
-            this_row = [label, sentence1, sentence2]
-        out_data.append(this_row)
-        assert len(out_header) == len(this_row)
-    return [out_header] + out_data
+            alter_sim.append(df['sim'][i])
+    dataframe = pd.DataFrame({'MWE1':MWE,'sentence_1':sentence1,'sentence_2':sentence2,'sim':alter_sim})
+    return dataframe
 
 
-def _get_dev_eval_data(data_location, input_file_name, gold_file_name, include_context, include_idiom):
-    input_headers, input_data = load_csv(os.path.join(data_location, input_file_name))
-    gold_header = gold_data = None
-    if not gold_file_name is None:
-        gold_header, gold_data = load_csv(os.path.join(data_location, gold_file_name))
-        assert len(input_data) == len(gold_data)
+def load_csv( path ) :
+    header = None
+    data = list()
+    with open( path, encoding='utf-8') as csvfile:
+        reader = csv.reader( csvfile )
+        for row in reader :
+            if header is None :
+                header = row
+                continue
+            data.append( row )
+    return header, data
 
-    # ['ID', 'Language', 'MWE', 'Previous', 'Target', 'Next']
-    # ['ID', 'DataID', 'Language', 'Label']
-
-    out_header = ['label', 'sentence1']
-    if include_idiom:
-        out_header = ['label', 'sentence1', 'sentence2']
-
-    out_data = list()
-    for index in range(len(input_data)):
-        label = 1
-        if not gold_file_name is None:
-            this_input_id = input_data[index][input_headers.index('ID')]
-            this_gold_id = gold_data[index][gold_header.index('ID')]
-            assert this_input_id == this_gold_id
-
-            label = gold_data[index][gold_header.index('Label')]
-
-        elem = input_data[index]
-        sentence1 = elem[input_headers.index('Target')]
-        if include_context:
-            sentence1 = ' '.join([elem[input_headers.index('Previous')], elem[input_headers.index('Target')],
-                                  elem[input_headers.index('Next')]])
-        this_row = None
-        if not include_idiom:
-            this_row = [label, sentence1]
+def writeList_csv(data, location):
+    with open( location, 'a', encoding='utf-8',newline='') as csvfile:
+        writer = csv.writer( csvfile )
+        if os.path.getsize(location)==0:#文件为空则添加表头
+            for i in range(len(data)):
+                writer.writerow(data[i])
         else:
-            sentence2 = elem[input_headers.index('MWE')]
-            this_row = [label, sentence1, sentence2]
-        assert len(out_header) == len(this_row)
-        out_data.append(this_row)
-
-    return [out_header] + out_data
-
-
-def create_data(input_location, output_location):
-    ## Zero shot data
-    train_data = _get_train_data(
-        data_location=input_location,
-        file_name='train_zero_shot.csv',
-        include_context=True,
-        include_idiom=False
-    )
-    write_csv(train_data, os.path.join(output_location, 'ZeroShot', 'train.csv'))
-
-    dev_data = _get_dev_eval_data(
-        data_location=input_location,
-        input_file_name='dev.csv',
-        gold_file_name='dev_gold.csv',
-        include_context=True,
-        include_idiom=False
-    )
-    write_csv(dev_data, os.path.join(output_location, 'ZeroShot', 'dev.csv'))
-
-    eval_data = _get_dev_eval_data(
-        data_location=input_location,
-        input_file_name='eval.csv',
-        gold_file_name=None,  ## Don't have gold evaluation file -- submit to CodaLab
-        include_context=True,
-        include_idiom=False
-    )
-    write_csv(eval_data, os.path.join(output_location, 'ZeroShot', 'eval.csv'))
-
-    ## OneShot Data (combine both for training)
-    train_zero_data = _get_train_data(
-        data_location=input_location,
-        file_name='train_zero_shot.csv',
-        include_context=False,
-        include_idiom=True
-    )
-    train_one_data = _get_train_data(
-        data_location=input_location,
-        file_name='train_one_shot.csv',
-        include_context=False,
-        include_idiom=True
-    )
-
-    train_one_data_from_test=_get_train_data(
-        data_location='../SubTaskA_data/TestData',
-        file_name='train_one_shot.csv',
-        include_context=False,
-        include_idiom=True
-    )
-
-    assert train_zero_data[0] == train_one_data[0]==train_one_data_from_test[0] ## Headers
-    train_data = train_one_data +train_one_data_from_test+ train_zero_data[1:]
-    write_csv(train_data, os.path.join(output_location, 'OneShot', 'train.csv'))
-
-    dev_data = _get_dev_eval_data(
-        data_location=input_location,
-        input_file_name='dev.csv',
-        gold_file_name='dev_gold.csv',
-        include_context=False,
-        include_idiom=True
-    )
-    write_csv(dev_data, os.path.join(output_location, 'OneShot', 'dev.csv'))
-
-    eval_data = _get_dev_eval_data(
-        data_location=input_location,
-        input_file_name='eval.csv',
-        gold_file_name=None,
-        include_context=False,
-        include_idiom=True
-    )
-    write_csv(eval_data, os.path.join(output_location, 'OneShot', 'eval.csv'))
-
+            for i in range(len(data)-1):
+                writer.writerow(data[i+1])
+    print( "Wrote {}".format(location))
     return
 
+def write_csv( data, location ) :
+    with open( location, 'a', encoding='utf-8',newline='') as csvfile:
+        writer = csv.writer( csvfile )
+        if os.path.getsize(location)==0:#文件为空则添加表头
+            writer.writerow([column for column in data])
+        for i in data.values:
+            writer.writerow(i)
+    print( "Wrote {}".format( location ))
+    return
 
-import sys
-import csv
-from sklearn.metrics import f1_score
+def set_seed(seed: int):
+    """
+    Modified from : https://github.com/huggingface/transformers/blob/master/src/transformers/trainer_utils.py
+    Helper function for reproducible behavior to set the seed in ``random``, ``numpy``, ``torch`` and/or ``tf`` (if
+    installed).
+    Args:
+        seed (:obj:`int`): The seed to set.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    # ^^ safe to call this function even if cuda is not available
 
-def _score(submission_data, submission_headers, gold_data, gold_headers, languages, settings):
-    if len(settings) == 2:
-        assert len(languages) == 2
-        gold_data = gold_data + gold_data
+    # torch.backends.cudnn.benchmark = False
 
-    filtered_submission_data = [i for i in submission_data if
-                                i[submission_headers.index('Language')] in languages and i[
-                                    submission_headers.index('Setting')] in settings]
-    submission_ids = [int(i[submission_headers.index('ID')]) for i in filtered_submission_data]
 
-    filtered_gold_data = [i for i in gold_data if int(i[gold_headers.index('ID')]) in submission_ids]
+def tokenise_idiom( phrase ) :
+    # word=re.sub("[?]",'',phrase)
+    s='ID' + re.sub( r'[\s|-]', '', phrase).lower() + 'ID'
+    return s
 
-    gold_ids = [int(i[0]) for i in filtered_gold_data]
+def get_devGold(dev_location):
+    df_label=pd.read_csv(dev_location)
+    sim=list()
+    for i in range(len(df_label)):
+        sim.append(float(df_label['sim'][i]))
+    return sim
 
-    if submission_ids != gold_ids:
-        print("ERROR: IDs in Submission file do not match IDs in gold file!")
-        sys.exit()
+def get_similarity(model_location, sent1, sent2) :
 
-    y_pred = [i[submission_headers.index('Label')] for i in filtered_submission_data]
-    y_true = [i[gold_headers.index('Label')] for i in filtered_gold_data]
+    model = SentenceTransformer(model_location)
+    sent1_embeddings = model.encode( sent1, show_progress_bar=True, convert_to_numpy=True)##值为nan
+    sent2_embeddings = model.encode( sent2, show_progress_bar=True, convert_to_numpy=True)
 
-    if any([(i == '') for i in y_pred]):
+    sent1_sent2 = 1 - (paired_cosine_distances(sent1_embeddings, sent2_embeddings))#余弦距离越小则余弦分数越大，两个句子越相近
+
+    return sent1_sent2#.astype(np.float32)
+
+def get_devSimilarity(data_location,model_location) :#finetune时调用
+    df_data=pd.read_csv(data_location,encoding='ISO-8859-1')
+    # df_label=pd.read_csv(label_location,keep_default_na=False)
+    sentence2=list()
+    sentence1_MWE=list()
+    id_MWE={}
+    index_id={}
+    # id_index={}
+    for i in range(len(df_data)):
+        index_id[df_data['ID'][i]] = i#id->index
+        # id_index[i]=df_data['ID'][i]#index->id
+        id_MWE[df_data['ID'][i]]=df_data['MWE1'][i]
+        sent1=df_data['sentence_1'][i]
+        if df_data['MWE1'][i] !='None':
+            replaced = sent1.replace( df_data['MWE1'][i], tokenise_idiom(df_data['MWE1'][i]))
+            assert replaced != sent1
+            sent1 = replaced
+
+        sentence1_MWE.append(sent1)
+        # sentence1.append(df_data['sentence_1'][i])
+        sentence2.append(df_data['sentence_2'][i])
+
+    sim = get_similarity(model_location,sentence1_MWE,sentence2) #similarity of all sentence pairs
+    print(len(sim))
+    return sim,index_id
+
+def prepare_data(location) :
+    data = pd.read_csv(location,encoding='ISO-8859-1')
+    replaced_sentence1 = list()
+    index_id={}
+    sentences2 = data['sentence_2']
+    # print(data.keys()[0])
+    if 'ID' in data.keys():
+        for index in range(len(data)) :
+            sentence1 = str(data['sentence_1'][index])
+            mwe = str(data[ 'MWE1'][index])
+            index_id[data['ID'][index]] = index#id->index
+
+            if mwe != 'None' :
+                # IDMWEID=
+                replaced = sentence1.replace( mwe, tokenise_idiom (mwe))#,flags=re.I
+                # if replaced==sentence1:
+                    # print('replaced:',replaced)
+                    # print('sentence1:',sentence1)
+                assert replaced != sentence1
+                sentence1 = replaced
+
+            replaced_sentence1.append( sentence1 )
+    else:
+        for index in range(len(data)) :
+            sentence1 = data['sentence_1'][index]
+            mwe = data[ 'MWE1'][index]
+
+            if mwe != 'None' :
+                replaced = re.sub( mwe, tokenise_idiom (mwe), sentence1, flags=re.I)
+                assert replaced != sentence1
+                sentence1 = replaced
+
+            replaced_sentence1.append( sentence1 )
+
+    return replaced_sentence1, sentences2, index_id
+
+def insert_to_submission(sims,language,submissionLocation) :#,dataLocation ,
+    dataFromSubssion=pd.read_csv(submissionLocation,encoding='ISO-8859-1')#submission file
+    # dataInsert=pd.read_csv(dataLocation,encoding='ISO-8859-1')#insert_file
+    #复制一份language满足条件的submmision
+    ID,Language,Setting,Sim=list(),list(),list(),list()
+    for i in range(len(dataFromSubssion)):
+        if dataFromSubssion['Language'][i]==language:
+            ID.append(dataFromSubssion['ID'][i])
+            Language.append(dataFromSubssion['Language'][i])
+            Setting.append(dataFromSubssion['Setting'][i])
+            Sim.append(dataFromSubssion['Sim'][i])
+    data=pd.DataFrame({'ID':ID,'Language':Language,'Setting':Setting,'Sim':Sim})
+    #插入sim
+    for i in range(len(data)):
+        # if data['Language'][i]==language:
+        data.loc[i,'Sim']=sims[i]
+    return data
+
+def insert_to_submission1(sims,id_index,submissionLocation ) :#language,dataLocation ,
+    dataFromSubssion=pd.read_csv(submissionLocation,encoding='ISO-8859-1')#submission file
+    data=dataFromSubssion.copy()
+    assert len(sims)==len(data)
+    # if id_index is not None:# dev file
+    # assert len(dataInsert)==len(id_index)
+    for i in range(len(data)):
+        index=id_index[data.loc[i,'ID']]#插入数据ID的索引
+        # data.loc[index,'Language']=dataInsert.loc[index,'Language']
+        # if data['Language'][index] == language and data['Setting'][index] == settings:
+        data.loc[index,'Sim']=sims[index]
+    return data
+
+def insert_to_submission3(sims,language,id_index,submissionLocation) :#,dataLocation ,
+    dataFromSubssion=pd.read_csv(submissionLocation,encoding='ISO-8859-1')#submission file
+    # dataInsert=pd.read_csv(dataLocation,encoding='ISO-8859-1')#insert_file
+    #复制一份language满足条件的submmision
+    ID,Language,Setting,Sim=list(),list(),list(),list()
+    for i in range(len(dataFromSubssion)):
+        if dataFromSubssion['Language'][i]==language:
+            ID.append(dataFromSubssion['ID'][i])
+            Language.append(dataFromSubssion['Language'][i])
+            Setting.append(dataFromSubssion['Setting'][i])
+            Sim.append(dataFromSubssion['Sim'][i])
+    data=pd.DataFrame({'ID':ID,'Language':Language,'Setting':Setting,'Sim':Sim})
+    #插入sim
+    for i in range(len(data)):
+        index=id_index[data.loc[i,'ID']]#插入数据ID的索引
+        data.loc[index,'Sim']=sims[index]
+    return data
+
+def _score( submission_data, submission_headers, gold_data, gold_headers, language,settings)  :
+
+    # ['ID', 'Language', 'Setting', 'Sim']
+    # ['ID', 'DataID', 'Language', 'sim', 'otherID']
+
+    filtered_submission_data = [ i for i in submission_data if i[ submission_headers.index( 'Language' ) ] in language ]#and i[ submission_headers.index( 'Setting' ) ] in settings
+    if any( [(i[submission_headers.index('Sim')] == '') for i in filtered_submission_data ] ) :
         return None, None, None
 
-    y_pred = [int(i) for i in y_pred]
-    y_true = [int(i) for i in y_true]
-    f1_macro = f1_score(y_true, y_pred, average='macro')
+    filtered_submission_dict = dict()
+    for elem in filtered_submission_data :
+        filtered_submission_dict[ int(elem[submission_headers.index('ID')])] = elem[ submission_headers.index( 'Sim' ) ]
 
-    return f1_macro
+    ## Generate gold
+    if len( settings ) > 1 :
+        raise Exception( "This script does not work for multiple Settings (Submission IDs not unique)" )
+    else :
+        gold_data = [ i for i in gold_data if i[ gold_headers.index( 'Language' ) ] in language ]
+
+    gold_labels_all = list()
+    predictions_all = list()
+
+    gold_labels_sts = list()
+    predictions_sts = list()
+
+    gold_labels_no_sts = list()
+    predictions_no_sts = list()
+
+    for elem in gold_data :
+        this_sim = elem[ gold_headers.index( 'sim' ) ]
+        if this_sim == '':
+            this_sim = filtered_submission_dict[ int(float(elem[gold_headers.index('otherID')]))]
+        this_sim = float( this_sim )
+        this_prediction = float( filtered_submission_dict[ int(elem[gold_headers.index('ID')])])
+
+        gold_labels_all.append( this_sim )#对应句子的预测
+        predictions_all.append( this_prediction )#原句句的预测
+
+        if elem[ gold_headers.index( 'DataID' ) ].split( '.' )[2] == 'sts':#
+            gold_labels_sts.append( this_sim )
+            predictions_sts.append( this_prediction )
+        else :
+            gold_labels_no_sts.append(this_sim)
+            predictions_no_sts.append(this_prediction)
+
+    corel_all, pvalue = spearmanr(gold_labels_all , predictions_all )
+    corel_sts, pvalue = spearmanr(gold_labels_sts , predictions_sts )
+    corel_no_sts, pvalue = spearmanr(gold_labels_no_sts, predictions_no_sts)
+    return ( corel_all, corel_sts, corel_no_sts )
 
 
-def evaluate_submission(submission_file, gold_labels):
-    submission_headers, submission_data = load_csv(submission_file)
-    gold_headers, gold_data = load_csv(gold_labels)
+def evaluate_submission( submission_file, gold_labels,settings) :#fine_tune,评估dev集
+    submission_headers, submission_data = load_csv( submission_file )
+    gold_headers , gold_data = load_csv( gold_labels )
 
-    if submission_headers != ['ID', 'Language', 'Setting', 'Label']:
-        print("ERROR: Incorrect submission format", file=sys.stderr)
+    if submission_headers != ['ID', 'Language', 'Setting', 'Sim'] :
+        print( "ERROR: Incorrect submission format", file=sys.stderr )
+        sys.exit()
+    if gold_headers != ['ID', 'DataID', 'Language', 'sim', 'otherID']:
+        print( "ERROR: Incorrect gold labels data format (did you use the correct file?)", file=sys.stderr )
         sys.exit()
 
-    if gold_headers != ['ID', 'DataID', 'Language', 'Label']:
-        print("ERROR: Incorrect gold labels data format (did you use the correct file?)", file=sys.stderr)
-        sys.exit()
+    submission_ids = [ int( i[0] ) for i in submission_data]
+    gold_ids = [ int( i[0] ) for i in gold_data] + [ int( float(i[-1])) for i in gold_data if i[-1] != '' ]
 
-    output = [['Settings', 'Languages', "F1 Score (Macro)"]]
+    for id in submission_ids :
+        if not id in gold_ids :
+            print( "ERROR: Submission file contains IDs that gold data does not - this could be because you submitted the wrong results (dev results instead of evaluation results) or because your submission file is corrupted", file=sys.stderr )
+            sys.exit()
 
-    for languages, settings in [
-        [['EN'], ['zero_shot']],
-        [['PT'], ['zero_shot']],
-        [['EN', 'PT'], ['zero_shot']],
-
-        [['EN'], ['one_shot']],
-        [['PT'], ['one_shot']],
-        [['EN', 'PT'], ['one_shot']],
-
-    ]:
-        f1_macro = _score(submission_data, submission_headers, gold_data, gold_headers, languages, settings)
-        this_entry = [','.join(settings), ','.join(languages), f1_macro]
-        output.append(this_entry)
-
+    output = [ [ 'Settings', 'Languages', "Spearman Rank ALL", "Spearman Rank Idiom Data", "Spearman Rank STS Data" ] ]
+    for language in [
+        # [ [ 'EN' ]      , [ 'pre_train' ] ],
+        # [ [ 'PT' ]      , [ 'pre_train' ] ],
+        # [ [ 'EN', 'PT' ], [ 'pre_train' ] ],
+        [ 'EN' ] ,
+        [ 'PT' ],
+        ['EN', 'PT'],
+    ] :
+        corel_all, corel_sts, corel_no_sts = _score( submission_data, submission_headers, gold_data, gold_headers, language,[settings])#[setting]
+        this_entry = [ settings, language, corel_all, corel_no_sts, corel_sts ]#所有句子、正面或相关联的句子对、已有相似度
+        output.append( this_entry )
     return output
 
-if __name__=="__main__":
-    # outpath=os.path.join('..','data')
-    # Path(os.path.join(outpath, 'ZeroShot')).mkdir(parents=True, exist_ok=True)
-    # Path(os.path.join(outpath, 'OneShot')).mkdir(parents=True, exist_ok=True)
-    #
-    # create_data('../SubTaskA_data/Data', outpath)
+if __name__ == '__main__':
+    ALLdata='../data/train_data.csv'
+    model_location='../model/model_with_MWE/distiluse-base-multilingual-cased-v1'
+    out_location='../data/train_data1.csv'
 
-    #test.csv
-    #one_shot
-    Oneshot_test_data = _get_dev_eval_data(
-        data_location='../SubTaskA_data/TestData',
-        input_file_name='test.csv',
-        gold_file_name=None,  ## Don't have gold evaluation file -- submit to CodaLab
-        include_context=False,
-        include_idiom=True
-    )
-    write_csv(Oneshot_test_data, os.path.join('..', 'data', 'OneShot', 'test.csv'))
+    alter1,alter2=get_alter_sentence(ALLdata)
+    sim_ALL=get_similarity(model_location,alter1, alter2)
 
-    # zero_shot
-    Zeroshot_test_data = _get_dev_eval_data(
-        data_location='../SubTaskA_data/TestData',
-        input_file_name='test.csv',
-        gold_file_name=None,  ## Don't have gold evaluation file -- submit to CodaLab
-        include_context=True,
-        include_idiom=False
-    )
-    write_csv(Zeroshot_test_data, os.path.join('..', 'data', 'ZeroShot', 'test.csv'))
+    out_train_file(ALLdata,sim_ALL).to_csv(out_location)
+
+
+    print('success!')
+
+
+# def evaluate_submission( submission_file, gold_labels,language_list) :
+#     submission_headers, submission_data = load_csv( submission_file )
+#     gold_headers , gold_data = load_csv( gold_labels )
+#     # if language=='ALL':
+#     #     language=['EN','PT']
+#     # else :
+#     #     language=[language]
+#     if submission_headers != ['ID', 'Language', 'Setting', 'Sim'] :
+#         print( "ERROR: Incorrect submission format", file=sys.stderr )
+#         sys.exit()
+#     if gold_headers != ['ID', 'DataID', 'Language', 'sim', 'otherID']:
+#         print( "ERROR: Incorrect gold labels data format (did you use the correct file?)", file=sys.stderr )
+#         sys.exit()
+#
+#     submission_ids = [ int( i[0] ) for i in submission_data if i[1] in language_list]
+#     gold_ids = [ int( i[0] ) for i in gold_data] + [ int( float(i[-1])) for i in gold_data if i[-1] != '' ]
+#
+#     for id in submission_ids :
+#         if not id in gold_ids :
+#             print( "ERROR: Submission file contains IDs that gold data does not - this could be because you submitted the wrong results (dev results instead of evaluation results) or because your submission file is corrupted", file=sys.stderr )
+#             sys.exit()
+#
+#     output = [ [ 'Settings', 'Languages', "Spearman Rank ALL", "Spearman Rank Idiom Data", "Spearman Rank STS Data" ] ]
+#     # if language=='ALL':
+#     # for language in [
+#     #     # [ [ 'EN' ]      , [ 'pre_train' ] ],
+#     #     # [ [ 'PT' ]      , [ 'pre_train' ] ],
+#     #     # [ [ 'EN', 'PT' ], [ 'pre_train' ] ],
+#     #     ['EN'],
+#     #     ['PT'],
+#     #     ['EN', 'PT'],
+#     # ] :
+#     corel_all, corel_sts, corel_no_sts = _score( submission_data, submission_headers, gold_data, gold_headers,language_list,['fine_tune'])
+#     this_entry = [ 'fine_tune', language_list, corel_all, corel_no_sts, corel_sts ]#所有句子、非sts、sts
+#     output.append( this_entry )
+#     # else:
+#     #     corel_all, corel_sts, corel_no_sts = _score( submission_data, submission_headers, gold_data, gold_headers, language,['fine_tune'])
+#     #     this_entry = [ 'fine_tune', language, corel_all, corel_no_sts, corel_sts ]#所有句子、正面或相关联的句子对、已有相似度
+#     #     output.append( this_entry )
+#
+#     return output
